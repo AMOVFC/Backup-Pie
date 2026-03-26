@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SYNC_SCRIPT="$PROJECT_ROOT/scripts/pi-home-sync.sh"
-TARGET_WORKTREE="${TARGET_WORKTREE:-/home/pi}"
+TARGET_WORKTREE="${TARGET_WORKTREE:-$HOME}"
 UNIT_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$UNIT_DIR/pi-home-backup.service"
 TIMER_FILE="$UNIT_DIR/pi-home-backup.timer"
@@ -96,7 +96,7 @@ write_systemd_units() {
 
   cat > "$SERVICE_FILE" <<SERVICE
 [Unit]
-Description=Backup /home/pi to git $BACKUP_BRANCH
+Description=Backup $TARGET_WORKTREE to git $BACKUP_BRANCH
 After=network-online.target
 Wants=network-online.target
 
