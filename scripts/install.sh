@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SYNC_SCRIPT="$PROJECT_ROOT/scripts/pi-home-sync.sh"
-TARGET_WORKTREE="${TARGET_WORKTREE:-/home/pi}"
+TARGET_WORKTREE="${TARGET_WORKTREE:-$HOME}"
 UNIT_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$UNIT_DIR/pi-home-backup.service"
 TIMER_FILE="$UNIT_DIR/pi-home-backup.timer"
@@ -27,9 +27,11 @@ prompt_if_empty() {
   fi
 
   if [[ "$secret" == "true" ]]; then
+    # shellcheck disable=SC2229  # indirect assignment into $var_name is intentional
     read -r -s -p "$prompt_text: " "$var_name"
     printf '\n'
   else
+    # shellcheck disable=SC2229
     read -r -p "$prompt_text: " "$var_name"
   fi
 
@@ -96,7 +98,7 @@ write_systemd_units() {
 
   cat > "$SERVICE_FILE" <<SERVICE
 [Unit]
-Description=Backup /home/pi to git $BACKUP_BRANCH
+Description=Backup $TARGET_WORKTREE to git $BACKUP_BRANCH
 After=network-online.target
 Wants=network-online.target
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BACKUP_WORKTREE="${BACKUP_WORKTREE:-/home/pi}"
+BACKUP_WORKTREE="${BACKUP_WORKTREE:-$HOME}"
 BACKUP_BRANCH="${BACKUP_BRANCH:-main}"
 BACKUP_REMOTE="${BACKUP_REMOTE:-origin}"
 BACKUP_COMMIT_PREFIX="${BACKUP_COMMIT_PREFIX:-backup(pi-home)}"
