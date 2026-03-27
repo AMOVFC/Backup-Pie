@@ -72,7 +72,7 @@ jobs:
         run: |
           WORKTREE="$(mktemp -d)"
           FAKE_REMOTE="$(mktemp -d)"
-          git init --bare "$FAKE_REMOTE"
+          git init --bare --initial-branch=main "$FAKE_REMOTE"
 
           export TARGET_WORKTREE="$WORKTREE"
           export BACKUP_BRANCH=main
@@ -147,16 +147,17 @@ jobs:
         run: |
           # Set up a bare "remote" repo with an initial commit
           REMOTE="$(mktemp -d)"
-          git init --bare "$REMOTE"
+          git init --bare --initial-branch=main "$REMOTE"
 
           SEED="$(mktemp -d)"
           git clone "$REMOTE" "$SEED"
+          git -C "$SEED" checkout -b main
           git -C "$SEED" config user.name "seed"
           git -C "$SEED" config user.email "seed@test"
           echo "seed" > "$SEED/seed.txt"
           git -C "$SEED" add -A
           git -C "$SEED" commit -m "initial"
-          git -C "$SEED" push origin main
+          git -C "$SEED" push -u origin main
           rm -rf "$SEED"
 
           # Set up the worktree (simulates a user's home dir)
