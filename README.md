@@ -2,6 +2,16 @@
 
 `Backup-Pie` keeps your entire home directory (`~`) synchronized with a GitHub branch.
 
+## Quick install
+
+```bash
+git clone --depth 1 https://github.com/AMOVFC/Backup-Pie.git ~/Backup-Pie
+cd ~/Backup-Pie
+./scripts/install.sh
+```
+
+The installer walks you through configuration interactively. See below for details and non-interactive options.
+
 ## Behavior
 
 On every run, `scripts/pi-home-sync.sh` will:

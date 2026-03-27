@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint scripts
+        run: shellcheck scripts/*.sh
+
+  test:
+    name: Script validation
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scripts are executable
+        run: |
+          for f in scripts/*.sh; do
+            test -x "$f" || { echo "FAIL: $f is not executable"; exit 1; }
+            echo "OK: $f"
+          done
+
+      - name: install.sh requires sync script
+        run: |
+          # install.sh should refuse to run when sync script is missing
+          chmod -x scripts/pi-home-sync.sh
+          if bash scripts/install.sh 2>&1; then
+            echo "FAIL: install.sh should have exited when sync script is not executable"
+            exit 1
+          fi
+          echo "OK: install.sh correctly refused to run"
+          chmod +x scripts/pi-home-sync.sh
+
+      - name: pi-home-sync.sh requires git repo
+        run: |
+          # sync script should fail when worktree is not a git repo
+          export BACKUP_WORKTREE="$(mktemp -d)"
+          if bash scripts/pi-home-sync.sh 2>&1; then
+            echo "FAIL: pi-home-sync.sh should have exited for non-git directory"
+            exit 1
+          fi
+          echo "OK: pi-home-sync.sh correctly refused to run"
+          rm -rf "$BACKUP_WORKTREE"
+
+      - name: pi-home-sync.sh detects merge conflict state
+        run: |
+          export BACKUP_WORKTREE="$(mktemp -d)"
+          git init "$BACKUP_WORKTREE"
+          mkdir -p "$BACKUP_WORKTREE/.git"
+          touch "$BACKUP_WORKTREE/.git/MERGE_HEAD"
+          if bash scripts/pi-home-sync.sh 2>&1; then
+            echo "FAIL: pi-home-sync.sh should have exited on MERGE_HEAD"
+            exit 1
+          fi
+          echo "OK: pi-home-sync.sh correctly detected in-progress merge"
+          rm -rf "$BACKUP_WORKTREE"
+
+  release:
+    name: Create release
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Backup-Pie ${{ steps.version.outputs.tag }}
+          body: |
+            ## Install
+
+            ```bash
+            git clone --branch ${{ steps.version.outputs.tag }} --depth 1 \
+              https://github.com/${{ github.repository }}.git ~/Backup-Pie
+            cd ~/Backup-Pie
+            ./scripts/install.sh
+            ```
+
+            ## What's included
+
+            - `scripts/install.sh` — interactive installer (configures git, systemd timer, Moonraker)
+            - `scripts/pi-home-sync.sh` — sync script (fetch, merge, commit, push)
+
+            See [README](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md) for full documentation.
+          generate_release_notes: true
