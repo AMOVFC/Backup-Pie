@@ -38,6 +38,68 @@ prompt_if_empty() {
   [[ -n "${!var_name}" ]] || { log "$var_name cannot be empty"; exit 1; }
 }
 
+ensure_gitignore() {
+  local gitignore="$TARGET_WORKTREE/.gitignore"
+  local -a default_patterns=(
+    "klipper/"
+    "moonraker/"
+    "Backup-Pie/"
+    "*.log"
+    ".cache/"
+  )
+
+  for pattern in "${default_patterns[@]}"; do
+    if [[ ! -f "$gitignore" ]] || ! grep -qxF "$pattern" "$gitignore"; then
+      echo "$pattern" >> "$gitignore"
+    fi
+  done
+
+  log "Ensured .gitignore contains default exclusions"
+}
+
+generate_readme() {
+  local readme="$TARGET_WORKTREE/README.md"
+
+  if [[ -f "$readme" ]]; then
+    log "README.md already exists in $TARGET_WORKTREE; skipping generation"
+    return 0
+  fi
+
+  cat > "$readme" <<README
+# Automated Backup for ${PRINTER_NAME}
+
+This repository is an automated backup of a Klipper 3D printer's home directory, managed by [Backup-Pie](https://github.com/AMOVFC/Backup-Pie).
+
+## How it works
+
+A systemd timer runs every 2 minutes and commits any changed files to this repository.
+
+## Excluded directories
+
+The following paths are excluded via \`.gitignore\` because they are separate Git repositories or contain ephemeral data:
+
+- \`klipper/\` — Klipper firmware (has its own upstream repo)
+- \`moonraker/\` — Moonraker API server (has its own upstream repo)
+- \`Backup-Pie/\` — The backup tool itself
+- \`*.log\` — Log files
+- \`.cache/\` — Cache data
+
+## Manual recovery
+
+To restore this backup onto a fresh Pi:
+
+\`\`\`bash
+git clone <this-repo-url> ~/
+cd ~
+git checkout ${BACKUP_BRANCH}
+\`\`\`
+
+To re-install Klipper and Moonraker after restoring, follow their respective installation guides, as they are not included in this backup.
+README
+
+  log "Generated README.md in $TARGET_WORKTREE"
+}
+
 ensure_repo_ready() {
   mkdir -p "$TARGET_WORKTREE"
 
@@ -164,6 +226,8 @@ main() {
   prompt_if_empty GITHUB_TOKEN "GitHub token (repo scope)" true
 
   ensure_repo_ready
+  ensure_gitignore
+  generate_readme
   write_env_file
   write_systemd_units
   install_moonraker_update_manager

@@ -59,6 +59,29 @@ main() {
     log "No remote updates to merge"
   fi
 
+  # Remove any nested git repos from the index to prevent submodule conflicts
+  local nested_git nested_dir rel_dir gitignore ignore_entry
+  gitignore="$BACKUP_WORKTREE/.gitignore"
+  while IFS= read -r -d '' nested_git; do
+    nested_dir="$(dirname "$nested_git")"
+    # Get path relative to worktree root
+    rel_dir="${nested_dir#"$BACKUP_WORKTREE"/}"
+    # Skip the worktree's own .git
+    if [[ "$rel_dir" == ".git" ]]; then
+      continue
+    fi
+    if in_repo ls-files --error-unmatch "$rel_dir" >/dev/null 2>&1; then
+      log "Removing cached nested repo: $rel_dir"
+      in_repo rm -r --cached "$rel_dir"
+    fi
+    # Ensure it's in .gitignore
+    ignore_entry="${rel_dir}/"
+    if [[ ! -f "$gitignore" ]] || ! grep -qxF "$ignore_entry" "$gitignore"; then
+      echo "$ignore_entry" >> "$gitignore"
+      log "Added $ignore_entry to .gitignore"
+    fi
+  done < <(find "$BACKUP_WORKTREE" -mindepth 2 -name ".git" -print0 2>/dev/null)
+
   if [[ -n "$(in_repo status --porcelain)" ]]; then
     local commit_msg
     commit_msg="$BACKUP_COMMIT_PREFIX: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"

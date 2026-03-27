@@ -114,6 +114,21 @@ jobs:
           perms="$(stat -c '%a' "$ENV_FILE")"
           [[ "$perms" == "600" ]] || { echo "FAIL: config.env perms are $perms, expected 600"; exit 1; }
 
+          # Verify .gitignore was created with default exclusions
+          [[ -f "$WORKTREE/.gitignore" ]] || { echo "FAIL: .gitignore not created"; exit 1; }
+          grep -qxF "klipper/" "$WORKTREE/.gitignore" || { echo "FAIL: klipper/ not in .gitignore"; exit 1; }
+          grep -qxF "moonraker/" "$WORKTREE/.gitignore" || { echo "FAIL: moonraker/ not in .gitignore"; exit 1; }
+          grep -qxF "Backup-Pie/" "$WORKTREE/.gitignore" || { echo "FAIL: Backup-Pie/ not in .gitignore"; exit 1; }
+          grep -qxF "*.log" "$WORKTREE/.gitignore" || { echo "FAIL: *.log not in .gitignore"; exit 1; }
+          grep -qxF ".cache/" "$WORKTREE/.gitignore" || { echo "FAIL: .cache/ not in .gitignore"; exit 1; }
+          echo "OK: .gitignore contains all default exclusions"
+
+          # Verify README.md was generated
+          [[ -f "$WORKTREE/README.md" ]] || { echo "FAIL: README.md not created"; exit 1; }
+          grep -q "Automated Backup for CI Test Printer" "$WORKTREE/README.md" || { echo "FAIL: README.md missing printer name"; exit 1; }
+          grep -q "Excluded directories" "$WORKTREE/README.md" || { echo "FAIL: README.md missing exclusion section"; exit 1; }
+          echo "OK: README.md generated with correct content"
+
           echo "OK: full install completed and verified"
           rm -rf "$WORKTREE" "$FAKE_REMOTE"
 
@@ -228,6 +243,58 @@ jobs:
           [[ -f "$FINAL/another-remote.txt" ]] || { echo "FAIL: another-remote.txt not in remote"; exit 1; }
           echo "OK: simultaneous local+remote changes handled"
           rm -rf "$FINAL"
+
+          # --- Test 5: sync handles nested git repos (submodule workaround) ---
+          # Re-create worktree and remote for this test
+          REMOTE2="$(mktemp -d)"
+          git init --bare --initial-branch=main "$REMOTE2"
+
+          SEED2="$(mktemp -d)"
+          git clone "$REMOTE2" "$SEED2"
+          git -C "$SEED2" checkout -b main
+          git -C "$SEED2" config user.name "seed"
+          git -C "$SEED2" config user.email "seed@test"
+          echo "seed" > "$SEED2/seed.txt"
+          git -C "$SEED2" add -A
+          git -C "$SEED2" commit -m "initial"
+          git -C "$SEED2" push -u origin main
+          rm -rf "$SEED2"
+
+          WORKTREE2="$(mktemp -d)"
+          git clone "$REMOTE2" "$WORKTREE2"
+          git -C "$WORKTREE2" config user.name "test"
+          git -C "$WORKTREE2" config user.email "test@test"
+
+          # Create a nested git repo (simulates klipper/)
+          mkdir -p "$WORKTREE2/klipper"
+          git init "$WORKTREE2/klipper"
+          git -C "$WORKTREE2/klipper" config user.name "klipper"
+          git -C "$WORKTREE2/klipper" config user.email "klipper@test"
+          echo "klipper-data" > "$WORKTREE2/klipper/README.md"
+          git -C "$WORKTREE2/klipper" add -A
+          git -C "$WORKTREE2/klipper" commit -m "klipper init"
+
+          export BACKUP_WORKTREE="$WORKTREE2"
+          export BACKUP_BRANCH=main
+          export BACKUP_REMOTE=origin
+          export BACKUP_COMMIT_PREFIX="backup(ci)"
+
+          # This should succeed without submodule errors
+          bash scripts/pi-home-sync.sh
+
+          # Verify klipper/ is in .gitignore
+          grep -qxF "klipper/" "$WORKTREE2/.gitignore" || { echo "FAIL: klipper/ not added to .gitignore"; exit 1; }
+          echo "OK: nested git repo handled and added to .gitignore"
+
+          # Verify klipper/ is not tracked in the remote
+          VERIFY2="$(mktemp -d)"
+          git clone "$REMOTE2" "$VERIFY2"
+          if [[ -d "$VERIFY2/klipper/.git" ]]; then
+            echo "FAIL: klipper/.git should not be in remote"
+            exit 1
+          fi
+          echo "OK: nested .git not pushed to remote"
+          rm -rf "$VERIFY2" "$WORKTREE2" "$REMOTE2"
 
           rm -rf "$WORKTREE" "$REMOTE"
           echo "OK: full sync cycle passed"
