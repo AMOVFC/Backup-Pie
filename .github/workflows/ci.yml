@@ -35,40 +35,201 @@ jobs:
             echo "OK: $f"
           done
 
-      - name: install.sh requires sync script
+      - name: Scripts use strict mode
         run: |
-          # install.sh should refuse to run when sync script is missing
+          for f in scripts/*.sh; do
+            if ! head -5 "$f" | grep -q 'set -euo pipefail'; then
+              echo "FAIL: $f missing 'set -euo pipefail'"
+              exit 1
+            fi
+            echo "OK: $f uses strict mode"
+          done
+
+      # --- install.sh guard-clause tests ---
+
+      - name: install.sh refuses to run without executable sync script
+        run: |
           chmod -x scripts/pi-home-sync.sh
           if bash scripts/install.sh 2>&1; then
-            echo "FAIL: install.sh should have exited when sync script is not executable"
+            echo "FAIL: should have exited when sync script is not executable"
             exit 1
           fi
-          echo "OK: install.sh correctly refused to run"
+          echo "OK: correctly refused"
           chmod +x scripts/pi-home-sync.sh
 
-      - name: pi-home-sync.sh requires git repo
+      - name: install.sh refuses empty BACKUP_BRANCH
         run: |
-          # sync script should fail when worktree is not a git repo
-          export BACKUP_WORKTREE="$(mktemp -d)"
-          if bash scripts/pi-home-sync.sh 2>&1; then
-            echo "FAIL: pi-home-sync.sh should have exited for non-git directory"
+          export GITHUB_TOKEN=fake PRINTER_NAME=test
+          if printf '\n' | bash scripts/install.sh 2>&1; then
+            echo "FAIL: should have exited on empty BACKUP_BRANCH"
             exit 1
           fi
-          echo "OK: pi-home-sync.sh correctly refused to run"
+          echo "OK: correctly refused empty BACKUP_BRANCH"
+
+      # --- install.sh end-to-end test ---
+
+      - name: install.sh full non-interactive run
+        run: |
+          WORKTREE="$(mktemp -d)"
+          FAKE_REMOTE="$(mktemp -d)"
+          git init --bare "$FAKE_REMOTE"
+
+          export TARGET_WORKTREE="$WORKTREE"
+          export BACKUP_BRANCH=main
+          export PRINTER_NAME="CI Test Printer"
+          export GITHUB_TOKEN=fake-token-for-ci
+          export REPO_ORIGIN="$FAKE_REMOTE"
+          export MOONRAKER_CONF=/dev/null/nonexistent
+
+          bash scripts/install.sh
+
+          # Verify git repo was initialised on the correct branch
+          branch="$(git -C "$WORKTREE" branch --show-current)"
+          [[ "$branch" == "main" ]] || { echo "FAIL: branch is '$branch', expected 'main'"; exit 1; }
+
+          # Verify git user config
+          name="$(git -C "$WORKTREE" config user.name)"
+          [[ "$name" == "CI Test Printer" ]] || { echo "FAIL: user.name is '$name'"; exit 1; }
+
+          email="$(git -C "$WORKTREE" config user.email)"
+          [[ "$email" == "CI_Test_Printer@backup-pie.local" ]] || { echo "FAIL: user.email is '$email'"; exit 1; }
+
+          # Verify remote was set
+          origin="$(git -C "$WORKTREE" remote get-url origin)"
+          [[ "$origin" == "$FAKE_REMOTE" ]] || { echo "FAIL: origin is '$origin'"; exit 1; }
+
+          # Verify credential helper configured
+          helper="$(git -C "$WORKTREE" config credential.helper)"
+          [[ "$helper" == *"store"* ]] || { echo "FAIL: credential.helper is '$helper'"; exit 1; }
+
+          # Verify env file was written
+          ENV_FILE="$HOME/.config/backup-pie/config.env"
+          [[ -f "$ENV_FILE" ]] || { echo "FAIL: config.env not created"; exit 1; }
+          grep -q "BACKUP_WORKTREE=$WORKTREE" "$ENV_FILE" || { echo "FAIL: BACKUP_WORKTREE missing from env"; exit 1; }
+          grep -q "BACKUP_BRANCH=main" "$ENV_FILE" || { echo "FAIL: BACKUP_BRANCH missing from env"; exit 1; }
+          grep -q "BACKUP_REMOTE=origin" "$ENV_FILE" || { echo "FAIL: BACKUP_REMOTE missing from env"; exit 1; }
+          grep -q 'BACKUP_COMMIT_PREFIX=backup(CI Test Printer)' "$ENV_FILE" || { echo "FAIL: BACKUP_COMMIT_PREFIX missing from env"; exit 1; }
+
+          # Verify env file permissions
+          perms="$(stat -c '%a' "$ENV_FILE")"
+          [[ "$perms" == "600" ]] || { echo "FAIL: config.env perms are $perms, expected 600"; exit 1; }
+
+          echo "OK: full install completed and verified"
+          rm -rf "$WORKTREE" "$FAKE_REMOTE"
+
+      # --- pi-home-sync.sh guard-clause tests ---
+
+      - name: pi-home-sync.sh rejects non-git directory
+        run: |
+          export BACKUP_WORKTREE="$(mktemp -d)"
+          if bash scripts/pi-home-sync.sh 2>&1; then
+            echo "FAIL: should have exited for non-git directory"
+            exit 1
+          fi
+          echo "OK: correctly rejected"
           rm -rf "$BACKUP_WORKTREE"
 
-      - name: pi-home-sync.sh detects merge conflict state
+      - name: pi-home-sync.sh rejects in-progress merge
         run: |
           export BACKUP_WORKTREE="$(mktemp -d)"
           git init "$BACKUP_WORKTREE"
-          mkdir -p "$BACKUP_WORKTREE/.git"
           touch "$BACKUP_WORKTREE/.git/MERGE_HEAD"
           if bash scripts/pi-home-sync.sh 2>&1; then
-            echo "FAIL: pi-home-sync.sh should have exited on MERGE_HEAD"
+            echo "FAIL: should have exited on MERGE_HEAD"
             exit 1
           fi
-          echo "OK: pi-home-sync.sh correctly detected in-progress merge"
+          echo "OK: correctly detected in-progress merge"
           rm -rf "$BACKUP_WORKTREE"
+
+      # --- pi-home-sync.sh end-to-end test ---
+
+      - name: pi-home-sync.sh full sync cycle
+        run: |
+          # Set up a bare "remote" repo with an initial commit
+          REMOTE="$(mktemp -d)"
+          git init --bare "$REMOTE"
+
+          SEED="$(mktemp -d)"
+          git clone "$REMOTE" "$SEED"
+          git -C "$SEED" config user.name "seed"
+          git -C "$SEED" config user.email "seed@test"
+          echo "seed" > "$SEED/seed.txt"
+          git -C "$SEED" add -A
+          git -C "$SEED" commit -m "initial"
+          git -C "$SEED" push origin main
+          rm -rf "$SEED"
+
+          # Set up the worktree (simulates a user's home dir)
+          WORKTREE="$(mktemp -d)"
+          git clone "$REMOTE" "$WORKTREE"
+          git -C "$WORKTREE" config user.name "test"
+          git -C "$WORKTREE" config user.email "test@test"
+
+          export BACKUP_WORKTREE="$WORKTREE"
+          export BACKUP_BRANCH=main
+          export BACKUP_REMOTE=origin
+          export BACKUP_COMMIT_PREFIX="backup(ci)"
+
+          # --- Test 1: sync with no local changes (should still succeed) ---
+          bash scripts/pi-home-sync.sh
+          echo "OK: sync with no changes succeeded"
+
+          # --- Test 2: sync commits and pushes local changes ---
+          echo "local-data" > "$WORKTREE/local-file.txt"
+          bash scripts/pi-home-sync.sh
+
+          # Verify local file was committed
+          git -C "$WORKTREE" log --oneline -1 | grep -q "backup(ci)" || { echo "FAIL: commit prefix not found"; exit 1; }
+          echo "OK: local changes committed with correct prefix"
+
+          # Verify it was pushed to remote
+          VERIFY="$(mktemp -d)"
+          git clone "$REMOTE" "$VERIFY"
+          [[ -f "$VERIFY/local-file.txt" ]] || { echo "FAIL: local-file.txt not pushed to remote"; exit 1; }
+          echo "OK: changes pushed to remote"
+          rm -rf "$VERIFY"
+
+          # --- Test 3: sync pulls remote changes ---
+          SIDE="$(mktemp -d)"
+          git clone "$REMOTE" "$SIDE"
+          git -C "$SIDE" config user.name "side"
+          git -C "$SIDE" config user.email "side@test"
+          echo "remote-data" > "$SIDE/remote-file.txt"
+          git -C "$SIDE" add -A
+          git -C "$SIDE" commit -m "remote change"
+          git -C "$SIDE" push origin main
+          rm -rf "$SIDE"
+
+          bash scripts/pi-home-sync.sh
+          [[ -f "$WORKTREE/remote-file.txt" ]] || { echo "FAIL: remote-file.txt not merged into worktree"; exit 1; }
+          echo "OK: remote changes merged into worktree"
+
+          # --- Test 4: sync handles simultaneous local + remote changes ---
+          SIDE2="$(mktemp -d)"
+          git clone "$REMOTE" "$SIDE2"
+          git -C "$SIDE2" config user.name "side2"
+          git -C "$SIDE2" config user.email "side2@test"
+          echo "another-remote" > "$SIDE2/another-remote.txt"
+          git -C "$SIDE2" add -A
+          git -C "$SIDE2" commit -m "another remote"
+          git -C "$SIDE2" push origin main
+          rm -rf "$SIDE2"
+
+          echo "another-local" > "$WORKTREE/another-local.txt"
+          bash scripts/pi-home-sync.sh
+
+          [[ -f "$WORKTREE/another-remote.txt" ]] || { echo "FAIL: another-remote.txt missing after merge+commit"; exit 1; }
+          [[ -f "$WORKTREE/another-local.txt" ]] || { echo "FAIL: another-local.txt missing"; exit 1; }
+
+          FINAL="$(mktemp -d)"
+          git clone "$REMOTE" "$FINAL"
+          [[ -f "$FINAL/another-local.txt" ]] || { echo "FAIL: another-local.txt not pushed"; exit 1; }
+          [[ -f "$FINAL/another-remote.txt" ]] || { echo "FAIL: another-remote.txt not in remote"; exit 1; }
+          echo "OK: simultaneous local+remote changes handled"
+          rm -rf "$FINAL"
+
+          rm -rf "$WORKTREE" "$REMOTE"
+          echo "OK: full sync cycle passed"
 
   release:
     name: Create release

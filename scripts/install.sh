@@ -27,9 +27,11 @@ prompt_if_empty() {
   fi
 
   if [[ "$secret" == "true" ]]; then
+    # shellcheck disable=SC2229  # indirect assignment into $var_name is intentional
     read -r -s -p "$prompt_text: " "$var_name"
     printf '\n'
   else
+    # shellcheck disable=SC2229
     read -r -p "$prompt_text: " "$var_name"
   fi
 
