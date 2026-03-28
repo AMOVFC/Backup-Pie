@@ -217,13 +217,18 @@ install_moonraker_update_manager() {
     return 0
   fi
 
+  local bp_origin
+  bp_origin="$(git -C "$PROJECT_ROOT" remote get-url origin 2>/dev/null || echo "https://github.com/AMOVFC/Backup-Pie.git")"
+  local bp_branch
+  bp_branch="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")"
+
   cat >> "$MOONRAKER_CONF" <<EOF2
 
 [update_manager ${MOONRAKER_SECTION_NAME}]
 type: git_repo
 path: ${PROJECT_ROOT}
-origin: ${REPO_ORIGIN}
-primary_branch: ${BACKUP_BRANCH}
+origin: ${bp_origin}
+primary_branch: ${bp_branch}
 is_system_service: False
 EOF2
 
