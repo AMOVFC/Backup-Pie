@@ -59,32 +59,28 @@ main() {
     log "No remote updates to merge"
   fi
 
-  # Exclude all nested git repositories from the backup.
-  # Any directory containing a .git entry is another repo and must not be
-  # committed into the backup repository.
+  # Remove any nested git repos from the index to prevent submodule conflicts
   local nested_git nested_dir rel_dir gitignore ignore_entry
   gitignore="$BACKUP_WORKTREE/.gitignore"
   while IFS= read -r -d '' nested_git; do
     nested_dir="$(dirname "$nested_git")"
+    # Get path relative to worktree root
     rel_dir="${nested_dir#"$BACKUP_WORKTREE"/}"
     # Skip the worktree's own .git
-    [[ "$rel_dir" == ".git" ]] && continue
-
-    # Ensure the nested repo is listed in .gitignore so git add never
-    # picks it up, even on a fresh clone.
+    if [[ "$rel_dir" == ".git" ]]; then
+      continue
+    fi
+    if in_repo ls-files --error-unmatch "$rel_dir" >/dev/null 2>&1; then
+      log "Removing cached nested repo: $rel_dir"
+      in_repo rm -r --cached "$rel_dir"
+    fi
+    # Ensure it's in .gitignore
     ignore_entry="${rel_dir}/"
     if [[ ! -f "$gitignore" ]] || ! grep -qxF "$ignore_entry" "$gitignore"; then
       echo "$ignore_entry" >> "$gitignore"
       log "Added $ignore_entry to .gitignore"
     fi
-
-    # Unconditionally try to remove the directory from the index.
-    # This handles the case where files were tracked before the repo
-    # appeared or before the ignore rule existed.
-    if in_repo rm -r --cached --quiet "$rel_dir" 2>/dev/null; then
-      log "Removed cached nested repo from index: $rel_dir"
-    fi
-  done < <(find "$BACKUP_WORKTREE" -mindepth 2 -name ".git" -not -path "$BACKUP_WORKTREE/.git/*" -print0 2>/dev/null)
+  done < <(find "$BACKUP_WORKTREE" -mindepth 2 -name ".git" -print0 2>/dev/null)
 
   if [[ -n "$(in_repo status --porcelain)" ]]; then
     local commit_msg

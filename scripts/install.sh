@@ -43,11 +43,6 @@ ensure_gitignore() {
   local -a default_patterns=(
     "klipper/"
     "moonraker/"
-    "mainsail/"
-    "fluidd/"
-    "KlipperScreen/"
-    "crowsnest/"
-    "katapult/"
     "Backup-Pie/"
     "*.log"
     ".cache/"
@@ -85,17 +80,9 @@ The following paths are excluded via \`.gitignore\` because they are separate Gi
 
 - \`klipper/\` — Klipper firmware (has its own upstream repo)
 - \`moonraker/\` — Moonraker API server (has its own upstream repo)
-- \`mainsail/\` — Mainsail web interface (has its own upstream repo)
-- \`fluidd/\` — Fluidd web interface (has its own upstream repo)
-- \`KlipperScreen/\` — KlipperScreen (has its own upstream repo)
-- \`crowsnest/\` — Crowsnest webcam streamer (has its own upstream repo)
-- \`katapult/\` — Katapult bootloader (has its own upstream repo)
 - \`Backup-Pie/\` — The backup tool itself
 - \`*.log\` — Log files
 - \`.cache/\` — Cache data
-
-Any other git repository found in the home directory is also automatically
-excluded at sync time.
 
 ## Manual recovery
 
