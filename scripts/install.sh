@@ -180,7 +180,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=$ENV_FILE
-ExecStart=/bin/bash $SYNC_SCRIPT
+ExecStart=/bin/bash "$SYNC_SCRIPT"
 
 [Install]
 WantedBy=default.target
