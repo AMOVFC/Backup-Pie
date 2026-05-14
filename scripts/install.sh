@@ -65,7 +65,9 @@ ensure_gitignore() {
     "katapult/"
     "Backup-Pie/"
     "*.log"
+    "*.gcode"
     ".cache/"
+    "timelapse/"
   )
 
   for pattern in "${default_patterns[@]}"; do
@@ -73,6 +75,31 @@ ensure_gitignore() {
       echo "$pattern" >> "$gitignore"
     fi
   done
+
+  # Parse moonraker.conf for update_manager repo paths and add them too
+  if [[ -f "$MOONRAKER_CONF" ]]; then
+    local section_active=0
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^\[update_manager ]]; then
+        section_active=1
+      elif [[ "$line" =~ ^\[ ]]; then
+        section_active=0
+      elif [[ $section_active -eq 1 && "$line" =~ ^path:[[:space:]]*(.+) ]]; then
+        local raw_path="${BASH_REMATCH[1]}"
+        # Expand ~ to home directory
+        local abs_path="${raw_path/#\~/$HOME}"
+        # Only add if it's inside the worktree
+        if [[ "$abs_path" == "$TARGET_WORKTREE/"* ]]; then
+          local rel_path="${abs_path#$TARGET_WORKTREE/}"
+          local pattern="${rel_path%/}/"
+          if ! grep -qxF "$pattern" "$gitignore" 2>/dev/null; then
+            echo "$pattern" >> "$gitignore"
+            log "Added $pattern to .gitignore (from moonraker.conf)"
+          fi
+        fi
+      fi
+    done < "$MOONRAKER_CONF"
+  fi
 
   log "Ensured .gitignore contains default exclusions"
 }
