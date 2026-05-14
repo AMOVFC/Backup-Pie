@@ -258,7 +258,7 @@ main() {
   load_existing_config
 
   prompt_if_empty BACKUP_BRANCH "Branch to sync (e.g. main)"
-  prompt_if_empty PRINTER_NAME "Printer signer name"
+  prompt_if_empty PRINTER_NAME "Printer name (shown as git commit author, e.g. Voron0)"
   prompt_if_empty GITHUB_TOKEN "GitHub token (repo scope)" true
 
   ensure_repo_ready
