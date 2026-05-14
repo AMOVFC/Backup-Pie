@@ -48,7 +48,11 @@ main() {
     in_repo symbolic-ref HEAD "refs/heads/$BACKUP_BRANCH"
     in_repo branch --set-upstream-to="$remote_ref" "$BACKUP_BRANCH"
   else
-    in_repo checkout "$BACKUP_BRANCH"
+    local current_branch
+    current_branch="$(in_repo symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    if [[ "$current_branch" != "$BACKUP_BRANCH" ]]; then
+      in_repo checkout "$BACKUP_BRANCH"
+    fi
   fi
 
   local local_head remote_head
