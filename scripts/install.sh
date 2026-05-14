@@ -7,6 +7,7 @@ TARGET_WORKTREE="${TARGET_WORKTREE:-$HOME}"
 UNIT_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$UNIT_DIR/pi-home-backup.service"
 TIMER_FILE="$UNIT_DIR/pi-home-backup.timer"
+WATCHER_FILE="$UNIT_DIR/pi-home-backup-watch.service"
 CONFIG_DIR="$HOME/.config/backup-pie"
 ENV_FILE="$CONFIG_DIR/config.env"
 CREDENTIAL_FILE="$CONFIG_DIR/git-credentials"
@@ -156,14 +157,12 @@ ensure_repo_ready() {
     git -C "$TARGET_WORKTREE" remote add origin "$REPO_ORIGIN"
   fi
 
-  git -C "$TARGET_WORKTREE" config credential.helper "store --file $CREDENTIAL_FILE"
+  mkdir -p "$CONFIG_DIR"
+  chmod 700 "$CONFIG_DIR"
+  printf 'https://x-access-token:%s@github.com\n' "$GITHUB_TOKEN" > "$CREDENTIAL_FILE"
+  chmod 600 "$CREDENTIAL_FILE"
 
-  git credential approve <<CREDS
-protocol=https
-host=github.com
-username=x-access-token
-password=$GITHUB_TOKEN
-CREDS
+  git -C "$TARGET_WORKTREE" config credential.helper "store --file $CREDENTIAL_FILE"
 
   log "Repository configured for branch '$BACKUP_BRANCH' and signer '$PRINTER_NAME'"
 }
@@ -173,12 +172,12 @@ write_env_file() {
   chmod 700 "$CONFIG_DIR"
 
   cat > "$ENV_FILE" <<ENV
-BACKUP_WORKTREE=$TARGET_WORKTREE
-BACKUP_BRANCH=$BACKUP_BRANCH
-BACKUP_REMOTE=origin
-BACKUP_COMMIT_PREFIX=backup($PRINTER_NAME)
-BACKUP_PRINTER_NAME=$PRINTER_NAME
-BACKUP_REPO_ORIGIN=$REPO_ORIGIN
+BACKUP_WORKTREE="$TARGET_WORKTREE"
+BACKUP_BRANCH="$BACKUP_BRANCH"
+BACKUP_REMOTE="origin"
+BACKUP_COMMIT_PREFIX="backup($PRINTER_NAME)"
+BACKUP_PRINTER_NAME="$PRINTER_NAME"
+BACKUP_REPO_ORIGIN="$REPO_ORIGIN"
 ENV
 
   chmod 600 "$ENV_FILE"
@@ -204,11 +203,11 @@ SERVICE
 
   cat > "$TIMER_FILE" <<TIMER
 [Unit]
-Description=Run pi home backup every 2 minutes
+Description=Fallback backup timer every 10 minutes
 
 [Timer]
-OnBootSec=1min
-OnUnitActiveSec=2min
+OnBootSec=2min
+OnUnitActiveSec=10min
 Unit=pi-home-backup.service
 Persistent=true
 
@@ -216,8 +215,37 @@ Persistent=true
 WantedBy=timers.target
 TIMER
 
+  cat > "$WATCHER_FILE" <<WATCHER
+[Unit]
+Description=Trigger backup on home directory file changes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+EnvironmentFile=$ENV_FILE
+ExecStart=/bin/bash -c 'while true; do \\
+  inotifywait -r -q -e modify,create,delete,move \\
+    --exclude "/\\.git/" \\
+    "\$BACKUP_WORKTREE" 2>/dev/null && sleep 3 && \\
+    systemctl --user start pi-home-backup.service; \\
+  done'
+
+[Install]
+WantedBy=default.target
+WATCHER
+
   systemctl --user daemon-reload
   systemctl --user enable --now pi-home-backup.timer
+  if command -v inotifywait >/dev/null 2>&1; then
+    systemctl --user enable --now pi-home-backup-watch.service
+    log "inotifywait found — file-change watcher enabled"
+  else
+    log "inotify-tools not installed — install it with: sudo apt install inotify-tools"
+    log "Falling back to 10-minute timer only"
+  fi
 
   log "Installed and enabled user systemd units"
 }
@@ -258,7 +286,7 @@ main() {
   load_existing_config
 
   prompt_if_empty BACKUP_BRANCH "Branch to sync (e.g. main)"
-  prompt_if_empty PRINTER_NAME "Printer signer name"
+  prompt_if_empty PRINTER_NAME "Printer name (shown as git commit author, e.g. Voron0)"
   prompt_if_empty GITHUB_TOKEN "GitHub token (repo scope)" true
 
   ensure_repo_ready

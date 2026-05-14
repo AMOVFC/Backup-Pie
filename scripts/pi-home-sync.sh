@@ -41,9 +41,18 @@ main() {
   # Ensure branch exists locally and is checked out.
   if ! in_repo rev-parse --verify "$BACKUP_BRANCH" >/dev/null 2>&1; then
     log "Creating local branch $BACKUP_BRANCH from $remote_ref"
-    in_repo checkout -b "$BACKUP_BRANCH" "$remote_ref"
+    # Point the branch directly at the remote commit without touching the
+    # working tree — avoids "untracked files would be overwritten" errors
+    # when the home directory already has files that match the remote.
+    in_repo update-ref "refs/heads/$BACKUP_BRANCH" "$remote_ref"
+    in_repo symbolic-ref HEAD "refs/heads/$BACKUP_BRANCH"
+    in_repo branch --set-upstream-to="$remote_ref" "$BACKUP_BRANCH"
   else
-    in_repo checkout "$BACKUP_BRANCH"
+    local current_branch
+    current_branch="$(in_repo symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    if [[ "$current_branch" != "$BACKUP_BRANCH" ]]; then
+      in_repo checkout "$BACKUP_BRANCH"
+    fi
   fi
 
   local local_head remote_head
