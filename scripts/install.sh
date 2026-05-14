@@ -156,14 +156,12 @@ ensure_repo_ready() {
     git -C "$TARGET_WORKTREE" remote add origin "$REPO_ORIGIN"
   fi
 
-  git -C "$TARGET_WORKTREE" config credential.helper "store --file $CREDENTIAL_FILE"
+  mkdir -p "$CONFIG_DIR"
+  chmod 700 "$CONFIG_DIR"
+  printf 'https://x-access-token:%s@github.com\n' "$GITHUB_TOKEN" > "$CREDENTIAL_FILE"
+  chmod 600 "$CREDENTIAL_FILE"
 
-  git credential approve <<CREDS
-protocol=https
-host=github.com
-username=x-access-token
-password=$GITHUB_TOKEN
-CREDS
+  git -C "$TARGET_WORKTREE" config credential.helper "store --file $CREDENTIAL_FILE"
 
   log "Repository configured for branch '$BACKUP_BRANCH' and signer '$PRINTER_NAME'"
 }
