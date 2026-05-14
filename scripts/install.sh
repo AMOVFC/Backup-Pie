@@ -38,6 +38,20 @@ prompt_if_empty() {
   [[ -n "${!var_name}" ]] || { log "$var_name cannot be empty"; exit 1; }
 }
 
+load_existing_config() {
+  if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+    [[ -n "${BACKUP_WORKTREE:-}" ]] && TARGET_WORKTREE="$BACKUP_WORKTREE"
+    [[ -n "${BACKUP_PRINTER_NAME:-}" ]] && PRINTER_NAME="${PRINTER_NAME:-$BACKUP_PRINTER_NAME}"
+    [[ -n "${BACKUP_REPO_ORIGIN:-}" ]] && REPO_ORIGIN="${REPO_ORIGIN:-$BACKUP_REPO_ORIGIN}"
+  fi
+
+  if [[ -z "${GITHUB_TOKEN:-}" && -f "$CREDENTIAL_FILE" ]]; then
+    GITHUB_TOKEN="$(sed -n 's|https://x-access-token:\(.*\)@github\.com|\1|p' "$CREDENTIAL_FILE")"
+  fi
+}
+
 ensure_gitignore() {
   local gitignore="$TARGET_WORKTREE/.gitignore"
   local -a default_patterns=(
@@ -163,6 +177,8 @@ BACKUP_WORKTREE=$TARGET_WORKTREE
 BACKUP_BRANCH=$BACKUP_BRANCH
 BACKUP_REMOTE=origin
 BACKUP_COMMIT_PREFIX=backup($PRINTER_NAME)
+BACKUP_PRINTER_NAME=$PRINTER_NAME
+BACKUP_REPO_ORIGIN=$REPO_ORIGIN
 ENV
 
   chmod 600 "$ENV_FILE"
@@ -238,6 +254,8 @@ EOF2
 
 main() {
   [[ -x "$SYNC_SCRIPT" ]] || { log "Sync script not found/executable: $SYNC_SCRIPT"; exit 1; }
+
+  load_existing_config
 
   prompt_if_empty BACKUP_BRANCH "Branch to sync (e.g. main)"
   prompt_if_empty PRINTER_NAME "Printer signer name"
