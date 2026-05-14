@@ -7,6 +7,7 @@ TARGET_WORKTREE="${TARGET_WORKTREE:-$HOME}"
 UNIT_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$UNIT_DIR/pi-home-backup.service"
 TIMER_FILE="$UNIT_DIR/pi-home-backup.timer"
+WATCHER_FILE="$UNIT_DIR/pi-home-backup-watch.service"
 CONFIG_DIR="$HOME/.config/backup-pie"
 ENV_FILE="$CONFIG_DIR/config.env"
 CREDENTIAL_FILE="$CONFIG_DIR/git-credentials"
@@ -202,11 +203,11 @@ SERVICE
 
   cat > "$TIMER_FILE" <<TIMER
 [Unit]
-Description=Run pi home backup every 2 minutes
+Description=Fallback backup timer every 10 minutes
 
 [Timer]
-OnBootSec=1min
-OnUnitActiveSec=2min
+OnBootSec=2min
+OnUnitActiveSec=10min
 Unit=pi-home-backup.service
 Persistent=true
 
@@ -214,8 +215,37 @@ Persistent=true
 WantedBy=timers.target
 TIMER
 
+  cat > "$WATCHER_FILE" <<WATCHER
+[Unit]
+Description=Trigger backup on home directory file changes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+EnvironmentFile=$ENV_FILE
+ExecStart=/bin/bash -c 'while true; do \\
+  inotifywait -r -q -e modify,create,delete,move \\
+    --exclude "/\\.git/" \\
+    "\$BACKUP_WORKTREE" 2>/dev/null && sleep 3 && \\
+    systemctl --user start pi-home-backup.service; \\
+  done'
+
+[Install]
+WantedBy=default.target
+WATCHER
+
   systemctl --user daemon-reload
   systemctl --user enable --now pi-home-backup.timer
+  if command -v inotifywait >/dev/null 2>&1; then
+    systemctl --user enable --now pi-home-backup-watch.service
+    log "inotifywait found — file-change watcher enabled"
+  else
+    log "inotify-tools not installed — install it with: sudo apt install inotify-tools"
+    log "Falling back to 10-minute timer only"
+  fi
 
   log "Installed and enabled user systemd units"
 }
