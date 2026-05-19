@@ -61,7 +61,7 @@ main() {
 
   if [[ "$local_head" != "$remote_head" ]]; then
     log "Remote changed; merging $remote_ref into $BACKUP_BRANCH"
-    if ! in_repo merge --no-edit "$remote_ref"; then
+    if ! in_repo merge --no-edit --allow-unrelated-histories "$remote_ref"; then
       fail "Merge failed. Resolve conflicts manually."
     fi
   else
