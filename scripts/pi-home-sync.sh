@@ -50,6 +50,15 @@ main() {
     fi
   fi
 
+  # Ensure the backup-pie config dir (contains token) is never committed
+  local config_rel=".config/backup-pie"
+  local gitignore="$BACKUP_WORKTREE/.gitignore"
+  if [[ ! -f "$gitignore" ]] || ! grep -qxF "${config_rel}/" "$gitignore"; then
+    echo "${config_rel}/" >> "$gitignore"
+    log "Added ${config_rel}/ to .gitignore"
+  fi
+  in_repo rm -r --cached --quiet "$config_rel" 2>/dev/null || true
+
   # Exclude nested git repos from the backup
   local nested_git nested_dir rel_dir gitignore ignore_entry
   gitignore="$BACKUP_WORKTREE/.gitignore"

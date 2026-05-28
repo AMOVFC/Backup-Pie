@@ -64,6 +64,7 @@ ensure_gitignore() {
     "crowsnest/"
     "katapult/"
     "Backup-Pie/"
+    ".config/backup-pie/"
     "*.log"
     "*.gcode"
     ".cache/"
