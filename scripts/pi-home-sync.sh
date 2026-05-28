@@ -15,12 +15,6 @@ fail() {
   exit 1
 }
 
-require_clean_merge_state() {
-  if [[ -f "$BACKUP_WORKTREE/.git/MERGE_HEAD" ]]; then
-    fail "Repository has an in-progress merge. Resolve it first."
-  fi
-}
-
 ensure_git_repo() {
   [[ -d "$BACKUP_WORKTREE/.git" ]] || fail "$BACKUP_WORKTREE is not a git repository"
 }
@@ -31,22 +25,10 @@ in_repo() {
 
 main() {
   ensure_git_repo
-  require_clean_merge_state
 
-  log "Fetching $BACKUP_REMOTE/$BACKUP_BRANCH"
-  in_repo fetch "$BACKUP_REMOTE" "$BACKUP_BRANCH"
-
-  local remote_ref="$BACKUP_REMOTE/$BACKUP_BRANCH"
-
-  # Ensure branch exists locally and is checked out.
+  # Ensure local branch exists and is checked out
   if ! in_repo rev-parse --verify "$BACKUP_BRANCH" >/dev/null 2>&1; then
-    log "Creating local branch $BACKUP_BRANCH from $remote_ref"
-    # Point the branch directly at the remote commit without touching the
-    # working tree — avoids "untracked files would be overwritten" errors
-    # when the home directory already has files that match the remote.
-    in_repo update-ref "refs/heads/$BACKUP_BRANCH" "$remote_ref"
-    in_repo symbolic-ref HEAD "refs/heads/$BACKUP_BRANCH"
-    in_repo branch --set-upstream-to="$remote_ref" "$BACKUP_BRANCH"
+    in_repo checkout -B "$BACKUP_BRANCH"
   else
     local current_branch
     current_branch="$(in_repo symbolic-ref --short HEAD 2>/dev/null || echo '')"
@@ -55,46 +37,37 @@ main() {
     fi
   fi
 
-  local local_head remote_head
-  local_head="$(in_repo rev-parse "$BACKUP_BRANCH")"
-  remote_head="$(in_repo rev-parse "$remote_ref")"
+  log "Fetching $BACKUP_REMOTE/$BACKUP_BRANCH"
+  in_repo fetch "$BACKUP_REMOTE" "$BACKUP_BRANCH" 2>/dev/null || log "No remote branch yet; skipping snapshot"
 
-  if [[ "$local_head" != "$remote_head" ]]; then
-    log "Remote changed; merging $remote_ref into $BACKUP_BRANCH"
-    if ! in_repo merge --no-edit --allow-unrelated-histories "$remote_ref"; then
-      fail "Merge failed. Resolve conflicts manually."
+  # Before overwriting remote main, save a daily snapshot of it
+  local remote_ref="$BACKUP_REMOTE/$BACKUP_BRANCH"
+  if in_repo rev-parse --verify "$remote_ref" >/dev/null 2>&1; then
+    local snapshot_branch="snapshot/$(date -u +'%Y-%m-%d')"
+    if ! in_repo ls-remote --exit-code "$BACKUP_REMOTE" "refs/heads/$snapshot_branch" >/dev/null 2>&1; then
+      log "Saving daily snapshot: $snapshot_branch"
+      in_repo push "$BACKUP_REMOTE" "$remote_ref:refs/heads/$snapshot_branch"
     fi
-  else
-    log "No remote updates to merge"
   fi
 
-  # Exclude all nested git repositories from the backup.
-  # Any directory containing a .git entry is another repo and must not be
-  # committed into the backup repository.
+  # Exclude nested git repos from the backup
   local nested_git nested_dir rel_dir gitignore ignore_entry
   gitignore="$BACKUP_WORKTREE/.gitignore"
   while IFS= read -r -d '' nested_git; do
     nested_dir="$(dirname "$nested_git")"
     rel_dir="${nested_dir#"$BACKUP_WORKTREE"/}"
-    # Skip the worktree's own .git
     [[ "$rel_dir" == ".git" ]] && continue
-
-    # Ensure the nested repo is listed in .gitignore so git add never
-    # picks it up, even on a fresh clone.
     ignore_entry="${rel_dir}/"
     if [[ ! -f "$gitignore" ]] || ! grep -qxF "$ignore_entry" "$gitignore"; then
       echo "$ignore_entry" >> "$gitignore"
       log "Added $ignore_entry to .gitignore"
     fi
-
-    # Unconditionally try to remove the directory from the index.
-    # This handles the case where files were tracked before the repo
-    # appeared or before the ignore rule existed.
     if in_repo rm -r --cached --quiet "$rel_dir" 2>/dev/null; then
       log "Removed cached nested repo from index: $rel_dir"
     fi
   done < <(find "$BACKUP_WORKTREE" -mindepth 2 -name ".git" -not -path "$BACKUP_WORKTREE/.git/*" -print0 2>/dev/null)
 
+  # Commit any local changes
   if [[ -n "$(in_repo status --porcelain)" ]]; then
     local commit_msg
     commit_msg="$BACKUP_COMMIT_PREFIX: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -105,8 +78,8 @@ main() {
     log "No local changes detected"
   fi
 
-  log "Pushing $BACKUP_BRANCH to $BACKUP_REMOTE"
-  in_repo push "$BACKUP_REMOTE" "$BACKUP_BRANCH"
+  log "Force-pushing $BACKUP_BRANCH to $BACKUP_REMOTE"
+  in_repo push --force "$BACKUP_REMOTE" "$BACKUP_BRANCH"
 
   log "Sync completed"
 }
