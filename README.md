@@ -2,6 +2,16 @@
 
 `Backup-Pie` keeps your entire home directory (`~`) synchronized with a GitHub branch.
 
+## Required GitHub token permissions
+
+The installer prompts for a GitHub **Personal Access Token (PAT)**. The token must have permission to read from and push to the backup repository.
+
+**Classic PAT** — enable the `repo` scope (full repository access).
+
+**Fine-grained PAT** — grant the following on the target repository:
+- **Contents**: Read and write (fetch, commit, push)
+- **Metadata**: Read-only (required by GitHub for any fine-grained token)
+
 ## Quick install
 
 ```bash
