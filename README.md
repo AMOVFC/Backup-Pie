@@ -2,6 +2,16 @@
 
 `Backup-Pie` keeps your entire home directory (`~`) synchronized with a GitHub branch.
 
+## Required GitHub token permissions
+
+The installer prompts for a GitHub **Personal Access Token (PAT)**. The token must have permission to read from and push to the backup repository.
+
+**Classic PAT** — enable the `repo` scope (full repository access).
+
+**Fine-grained PAT** — grant the following on the target repository:
+- **Contents**: Read and write (fetch, commit, push)
+- **Metadata**: Read-only (required by GitHub for any fine-grained token)
+
 ## Quick install
 
 ```bash
@@ -14,14 +24,14 @@ The installer walks you through configuration interactively. See below for detai
 
 ## Behavior
 
-On every run, `scripts/pi-home-sync.sh` will:
+The printer is always the source of truth. On every run, `scripts/pi-home-sync.sh` will:
 
-1. Fetch remote branch (`origin/<branch>`).
-2. Merge remote changes into local branch.
-3. Commit local filesystem changes in the target worktree (defaults to `~`).
-4. Push local branch to remote.
+1. Fetch the remote branch.
+2. Save the current remote state to a `snapshot/YYYY-MM-DD` branch (once per day) before overwriting it.
+3. Commit any local filesystem changes in the target worktree (defaults to `~`).
+4. Force-push the local branch to remote, overwriting it.
 
-If merge conflicts occur, the run fails so you can resolve manually.
+To browse a previous day's state, check out the corresponding `snapshot/` branch on GitHub.
 
 ## One-command installer
 
@@ -77,13 +87,12 @@ REPO_ORIGIN="https://github.com/YOUR_USER/YOUR_REPO.git" \
 - `BACKUP_REMOTE`
 - `BACKUP_COMMIT_PREFIX`
 
-## Manual conflict resolution
+## Restoring from a snapshot
+
+Each day's previous state is saved to a `snapshot/YYYY-MM-DD` branch on GitHub before the printer overwrites main. To restore a file from a past snapshot:
 
 ```bash
-cd ~
-git status
-# resolve conflicts
-git add <resolved files>
-git commit
-git push origin <branch>
+git fetch origin
+git checkout origin/snapshot/2026-05-28 -- path/to/file
+git commit -m "restore path/to/file from snapshot"
 ```

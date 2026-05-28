@@ -64,6 +64,7 @@ ensure_gitignore() {
     "crowsnest/"
     "katapult/"
     "Backup-Pie/"
+    ".config/backup-pie/"
     "*.log"
     "*.gcode"
     ".cache/"
@@ -119,7 +120,7 @@ This repository is an automated backup of a Klipper 3D printer's home directory,
 
 ## How it works
 
-A systemd timer runs every 2 minutes and commits any changed files to this repository.
+A systemd timer runs every hour (or immediately on file changes if inotify-tools is installed) and commits any changed files to this repository.
 
 ## Excluded directories
 
@@ -230,11 +231,11 @@ SERVICE
 
   cat > "$TIMER_FILE" <<TIMER
 [Unit]
-Description=Fallback backup timer every 10 minutes
+Description=Fallback backup timer every 1 hour
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=10min
+OnUnitActiveSec=1h
 Unit=pi-home-backup.service
 Persistent=true
 
