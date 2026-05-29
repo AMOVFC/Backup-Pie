@@ -11,3 +11,8 @@ AFC-Klipper-Screen-Add-On/
 AT-Documentation/
 HTLF-2-claymore-/
 Art-Themes/
+
+# GCode files
+*.gcode
+*.gco
+*.g
