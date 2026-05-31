@@ -1,0 +1,18 @@
+# ArmoredTurtle projects - users may clone these into this directory
+BoxTurtle/
+8-Track-Raven-Alpha/
+BoxTurtle-Enclosure/
+TurtleNeck/
+LEGACY-TN-Pro/
+Filatector/
+AFC-Accessories/
+SUSBurner/
+AFC-Klipper-Screen-Add-On/
+AT-Documentation/
+HTLF-2-claymore-/
+Art-Themes/
+
+# GCode files
+*.gcode
+*.gco
+*.g

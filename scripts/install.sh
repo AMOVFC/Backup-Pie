@@ -256,8 +256,8 @@ RestartSec=5
 EnvironmentFile=$ENV_FILE
 ExecStart=/bin/bash -c 'while true; do \\
   inotifywait -r -q -e modify,create,delete,move \\
-    --exclude "/\\.git/" \\
-    "\$BACKUP_WORKTREE" 2>/dev/null && sleep 3 && \\
+    --exclude "(/\\.git/|\.log$|/timelapse/|/tmp/)" \\
+    "\$BACKUP_WORKTREE" 2>/dev/null && sleep 600 && \\
     systemctl --user start pi-home-backup.service; \\
   done'
 
