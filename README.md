@@ -77,6 +77,52 @@ REPO_ORIGIN="https://github.com/YOUR_USER/YOUR_REPO.git" \
 - `BACKUP_REMOTE`
 - `BACKUP_COMMIT_PREFIX`
 
+## Adjusting backup frequency without reinstalling
+
+The installer writes systemd unit files to `~/.config/systemd/user/`. After updating Backup-Pie you do **not** need to re-run the full install — you can edit the watcher unit directly.
+
+### What the watcher does
+
+`pi-home-backup-watch.service` uses `inotifywait` to watch your home directory for file changes. When a change is detected it waits a **debounce period** before triggering a backup. This prevents a burst of rapid writes (e.g. during a print) from triggering dozens of backup runs in a row.
+
+The fallback timer (`pi-home-backup.timer`) runs a backup once per hour regardless of file changes, so you are always covered even if the watcher is not installed.
+
+### Changing the debounce period
+
+Open the watcher unit:
+
+```bash
+nano ~/.config/systemd/user/pi-home-backup-watch.service
+```
+
+Find the `ExecStart=` line and change the `sleep` value (in seconds) to whatever suits you:
+
+```ini
+ExecStart=/bin/bash -c 'while true; do \
+  inotifywait -r -q -e modify,create,delete,move \
+    --exclude "(/\.git/|\.log$|/timelapse/|/tmp/)" \
+    "$BACKUP_WORKTREE" 2>/dev/null && sleep 600 && \
+    systemctl --user start pi-home-backup.service; \
+  done'
+```
+
+Common values:
+
+| Value | Effect |
+|-------|--------|
+| `60`  | Back up at most once per minute after a change |
+| `300` | Back up at most once every 5 minutes |
+| `600` | Back up at most once every 10 minutes (default) |
+
+Save the file (`Ctrl+O`, `Enter`, `Ctrl+X`), then reload and restart:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart pi-home-backup-watch.service
+```
+
+The new debounce takes effect immediately — no reinstall needed.
+
 ## Manual conflict resolution
 
 ```bash
